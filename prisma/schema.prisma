@@ -1,0 +1,29 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model CachedRepo {
+  id           String   @id @default(cuid())
+  repoFullName String
+  commitSha    String
+  graphJson    Json
+  analyzedAt   DateTime @default(now())
+  userId       String?
+
+  @@unique([repoFullName, commitSha])
+}
+
+model FileSummary {
+  id           String   @id @default(cuid())
+  repoFullName String
+  filePath     String
+  summary      String
+  createdAt    DateTime @default(now())
+
+  @@unique([repoFullName, filePath])
+}
