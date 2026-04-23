@@ -1,12 +1,13 @@
 'use client'
 
 import { useEffect, useState, useCallback, Suspense } from 'react'
-import { useParams, useSearchParams } from 'next/navigation'
+import { useParams, useSearchParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import type { GraphData, GraphNode } from '@/types/graph'
 import FilePanel from '@/components/FilePanel'
 import SearchBar from '@/components/SearchBar'
 import FilterToggle from '@/components/FilterToggle'
+import GalaxyLoader from '@/components/GalaxyLoader'
 
 const GalaxyView = dynamic(() => import('@/components/GalaxyView'), { ssr: false })
 
@@ -15,6 +16,7 @@ type Status = 'polling' | 'loading-graph' | 'ready' | 'failed'
 function GalaxyPageInner() {
   const { runId } = useParams<{ runId: string }>()
   const searchParams = useSearchParams()
+  const router = useRouter()
   const repoFullName = searchParams.get('repo') ?? ''
 
   const [status, setStatus] = useState<Status>('polling')
@@ -22,22 +24,19 @@ function GalaxyPageInner() {
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
   const [highlightNodeId, setHighlightNodeId] = useState<string | undefined>()
   const [activeCluster, setActiveCluster] = useState<string | null>(null)
-  const [dots, setDots] = useState('.')
-
-  // Animate loading dots
-  useEffect(() => {
-    if (status !== 'polling') return
-    const t = setInterval(() => setDots(d => d.length >= 3 ? '.' : d + '.'), 500)
-    return () => clearInterval(t)
-  }, [status])
 
   // Poll job status
   useEffect(() => {
     if (status !== 'polling') return
 
     const poll = async () => {
-      const res = await fetch(`/api/status/${runId}`)
-      const data = await res.json()
+      let data: { status: string; repoId?: string }
+      try {
+        const res = await fetch(`/api/status/${runId}`)
+        data = await res.json()
+      } catch {
+        return // network blip — try again on next interval
+      }
 
       if (data.status === 'complete') {
         setStatus('loading-graph')
@@ -84,28 +83,7 @@ function GalaxyPageInner() {
     : graphData
 
   if (status === 'polling' || status === 'loading-graph') {
-    return (
-      <div className="flex min-h-screen items-center justify-center flex-col gap-4">
-        <div className="relative w-32 h-32">
-          {[...Array(20)].map((_, i) => (
-            <div
-              key={i}
-              className="absolute rounded-full bg-white animate-pulse"
-              style={{
-                width: Math.random() * 4 + 1,
-                height: Math.random() * 4 + 1,
-                top: `${Math.random() * 100}%`,
-                left: `${Math.random() * 100}%`,
-                animationDelay: `${Math.random() * 2}s`,
-                animationDuration: `${1 + Math.random() * 2}s`,
-                opacity: Math.random() * 0.8 + 0.2,
-              }}
-            />
-          ))}
-        </div>
-        <p className="text-zinc-400 text-sm">Mapping {repoFullName}{dots}</p>
-      </div>
-    )
+    return <GalaxyLoader repoName={repoFullName} onCancel={() => router.push('/')} />
   }
 
   if (status === 'failed') {

@@ -20,14 +20,21 @@ export default function FilePanel({ node, graphData, repoFullName, onNavigate, o
     setSummary(null)
     setLoadingSummary(true)
 
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 15000)
+
     fetch('/api/summary', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ repoFullName, filePath: node.path, fileContent: '' }),
+      signal: controller.signal,
     })
       .then(r => r.json())
-      .then(data => setSummary(data.summary))
-      .finally(() => setLoadingSummary(false))
+      .then(data => setSummary(data.summary ?? 'No summary available.'))
+      .catch(() => setSummary('Could not load summary.'))
+      .finally(() => { clearTimeout(timeout); setLoadingSummary(false) })
+
+    return () => { clearTimeout(timeout); controller.abort() }
   }, [node, repoFullName])
 
   if (!node) return null

@@ -23,7 +23,13 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   const token = (session?.accessToken as string | undefined) ?? undefined
 
-  const handle = await analyzeRepo.trigger({ repoFullName, token })
+  let handle
+  try {
+    handle = await analyzeRepo.trigger({ repoFullName, token })
+  } catch (err) {
+    console.error('[analyze] trigger failed:', err)
+    return NextResponse.json({ error: 'Failed to start analysis. Check TRIGGER_SECRET_KEY.' }, { status: 500 })
+  }
 
   return NextResponse.json({ runId: handle.id, repoFullName })
 }

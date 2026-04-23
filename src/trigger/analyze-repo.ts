@@ -15,7 +15,9 @@ export const analyzeRepo = task({
     repoFullName: string
     token?: string
   }): Promise<{ repoId: string; cached: boolean }> => {
-    const { repoFullName, token } = payload
+    const { repoFullName } = payload
+    // User OAuth token takes priority; fall back to server PAT for unauthenticated requests
+    const token = payload.token ?? process.env.GITHUB_TOKEN
     const [owner, repo] = repoFullName.split('/')
 
     const commitSha = await getLatestCommitSha(owner, repo, token)

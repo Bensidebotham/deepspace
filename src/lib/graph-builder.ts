@@ -2,42 +2,60 @@ import type { ParsedFile, GraphData, GraphNode, GraphEdge } from '@/types/graph'
 
 const EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '/index.ts', '/index.tsx', '/index.js']
 
+function tryExtensions(base: string, allPaths: string[]): string | null {
+  if (allPaths.includes(base)) return base
+  for (const ext of EXTENSIONS) {
+    if (allPaths.includes(base + ext)) return base + ext
+  }
+  return null
+}
+
 export function resolveImport(
   importStr: string,
   fromPath: string,
   allPaths: string[]
 ): string | null {
-  // External packages start with a letter or @
+  // Handle @/ alias — Next.js maps it to src/ (fall back to root)
+  if (importStr.startsWith('@/')) {
+    const rest = importStr.slice(2) // strip '@/'
+    return (
+      tryExtensions('src/' + rest, allPaths) ??
+      tryExtensions(rest, allPaths)
+    )
+  }
+
+  // Ignore bare external packages
   if (!importStr.startsWith('.') && !importStr.startsWith('/')) return null
 
   const fromDir = fromPath.split('/').slice(0, -1).join('/')
-  const base = fromDir ? `${fromDir}/${importStr.replace(/^\.\//, '')}` : importStr.replace(/^\.\//, '')
+  const base = fromDir
+    ? `${fromDir}/${importStr.replace(/^\.\//, '')}`
+    : importStr.replace(/^\.\//, '')
   const normalized = base.replace(/\/\//g, '/')
 
-  // Try exact match first, then try adding extensions
-  if (allPaths.includes(normalized)) return normalized
+  return tryExtensions(normalized, allPaths)
+}
 
-  for (const ext of EXTENSIONS) {
-    const candidate = `${normalized}${ext}`
-    if (allPaths.includes(candidate)) return candidate
-  }
-
-  return null
+function clusterGroup(filePath: string): string {
+  const segments = filePath.split('/')
+  // For src/app/..., src/components/..., etc — use the second segment
+  if (segments[0] === 'src' && segments.length > 2) return segments[1]
+  // For top-level files inside a single folder
+  if (segments.length > 1) return segments[0]
+  return 'root'
 }
 
 export function buildGraph(files: ParsedFile[]): GraphData {
   const allPaths = files.map(f => f.path)
   const inboundCount: Record<string, number> = {}
 
-  // Initialize
   for (const f of files) inboundCount[f.path] = 0
 
-  // Build edges + count inbound
   const edges: GraphEdge[] = []
   for (const file of files) {
     for (const imp of file.imports) {
       const resolved = resolveImport(imp, file.path, allPaths)
-      if (resolved) {
+      if (resolved && resolved !== file.path) {
         edges.push({ source: file.path, target: resolved, type: 'import' })
         inboundCount[resolved] = (inboundCount[resolved] ?? 0) + 1
       }
@@ -46,7 +64,6 @@ export function buildGraph(files: ParsedFile[]): GraphData {
 
   const maxInbound = Math.max(1, ...Object.values(inboundCount))
 
-  // Build nodes
   const outboundCount: Record<string, number> = {}
   for (const e of edges) {
     outboundCount[e.source] = (outboundCount[e.source] ?? 0) + 1
@@ -55,14 +72,13 @@ export function buildGraph(files: ParsedFile[]): GraphData {
   const nodes: GraphNode[] = files.map(file => {
     const inbound = inboundCount[file.path] ?? 0
     const outbound = outboundCount[file.path] ?? 0
-    const segments = file.path.split('/')
     return {
       id: file.path,
       path: file.path,
       language: file.language,
       lineCount: file.lineCount,
       degree: inbound + outbound,
-      clusterGroup: segments.length > 1 ? segments[0] : 'root',
+      clusterGroup: clusterGroup(file.path),
       importanceScore: inbound / maxInbound,
     }
   })
