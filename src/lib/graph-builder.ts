@@ -10,14 +10,34 @@ function tryExtensions(base: string, allPaths: string[]): string | null {
   return null
 }
 
+// Resolve ./ and ../ segments in a path string
+function normalizePath(path: string): string {
+  const parts = path.split('/')
+  const out: string[] = []
+  for (const part of parts) {
+    if (part === '..') out.pop()
+    else if (part !== '.') out.push(part)
+  }
+  return out.join('/')
+}
+
 export function resolveImport(
   importStr: string,
   fromPath: string,
   allPaths: string[]
 ): string | null {
-  // Handle @/ alias — Next.js maps it to src/ (fall back to root)
+  // @/ alias — try src/ prefix first, then root
   if (importStr.startsWith('@/')) {
-    const rest = importStr.slice(2) // strip '@/'
+    const rest = importStr.slice(2)
+    return (
+      tryExtensions('src/' + rest, allPaths) ??
+      tryExtensions(rest, allPaths)
+    )
+  }
+
+  // ~/  alias — common alternative to @/
+  if (importStr.startsWith('~/')) {
+    const rest = importStr.slice(2)
     return (
       tryExtensions('src/' + rest, allPaths) ??
       tryExtensions(rest, allPaths)
@@ -28,12 +48,10 @@ export function resolveImport(
   if (!importStr.startsWith('.') && !importStr.startsWith('/')) return null
 
   const fromDir = fromPath.split('/').slice(0, -1).join('/')
-  const base = fromDir
-    ? `${fromDir}/${importStr.replace(/^\.\//, '')}`
-    : importStr.replace(/^\.\//, '')
-  const normalized = base.replace(/\/\//g, '/')
+  const joined  = fromDir ? `${fromDir}/${importStr}` : importStr
+  const base    = normalizePath(joined)  // resolves ../ and ./
 
-  return tryExtensions(normalized, allPaths)
+  return tryExtensions(base, allPaths)
 }
 
 function clusterGroup(filePath: string): string {
